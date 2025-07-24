@@ -1,6 +1,7 @@
 package io.sqlitek
 
 import io.sqlitek.RowLayout.ROW_SIZE
+import java.io.Closeable
 import java.nio.ByteBuffer
 
 object RowLayout {
@@ -41,38 +42,60 @@ fun deserialize(input: ByteArray): Row {
     return Row(id, username, email)
 }
 
-// I’m making our page size 4 kilobytes because it’s the same size as a page used in the virtual memory systems of most computer architectures.
-// This means one page in our database corresponds to one page used by the operating system.
-// The operating system will move pages in and out of memory as whole units instead of breaking them up.
-const val PAGE_SIZE = 4096
+
 const val TABLE_MAX_PAGES = 100
 
 const val ROWS_PER_PAGE = PAGE_SIZE / ROW_SIZE
 const val TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES
-
 
 // We don’t have void* or fixed-size arrays in Kotlin, so we represent it using:
 //
 //A mutable list or array of nullable ByteArrays or ByteBuffers
 // Rows should not cross page boundaries.
 // Since pages probably won’t exist next to each other in memory, this assumption makes it easier to read/write rows
-class Table {
-    var numberOfRows = 0
-
-    val pages: Array<ByteArray?> = arrayOfNulls(TABLE_MAX_PAGES)
+class Table(val pager: Pager, var numberOfRows: Int = 0): Closeable {
 
     fun getRowSlot(rowNumber: Int): ByteBuffer {
         val pageNum = rowNumber / ROWS_PER_PAGE
         val rowOffset = rowNumber % ROWS_PER_PAGE
         val byteOffset = rowOffset * ROW_SIZE
-        if (pages[pageNum] == null) {
-            pages[pageNum] = ByteArray(PAGE_SIZE)
-        }
-        val page = pages[pageNum]!!
+        val page = pager.getPage(pageNum)
         return ByteBuffer.wrap(page, byteOffset, ROW_SIZE).slice()
     }
 
     fun getCurRowSlot(): ByteBuffer {
         return getRowSlot(numberOfRows)
+    }
+
+    override fun close() {
+        closeDatabase(this)
+    }
+}
+
+// flushes the page cache to disk
+// closes the database file
+// frees the memory for the Pager and Table data structures
+fun closeDatabase(table: Table) {
+    val pager = table.pager
+    val cachedPages = pager.cachedPages
+    val numOfFullPages = table.numberOfRows / ROWS_PER_PAGE
+    for (i in 0..<numOfFullPages) {
+        if (cachedPages[i] == null) continue
+        pager.flush(i, PAGE_SIZE)
+        cachedPages[i] = null
+    }
+    // There may be a partial page to write to the end of the file.
+    // This should not be needed after we switch to a B-tree.
+    val additionalRows = table.numberOfRows % ROWS_PER_PAGE
+    if (additionalRows > 0) {
+        val num = numOfFullPages
+        if (pager.cachedPages[num] != null) {
+            pager.flush(num, additionalRows * ROW_SIZE)
+            pager.cachedPages[num] = null
+        }
+    }
+    pager.fileDescriptor.close()
+    for (i in 0..<TABLE_MAX_PAGES) {
+        if (pager.cachedPages[i] != null) pager.cachedPages[i] = null
     }
 }

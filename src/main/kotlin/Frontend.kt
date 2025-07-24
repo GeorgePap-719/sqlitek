@@ -22,9 +22,14 @@ fun parseMetaCommand(input: String): MetaCommand? {
     return null
 }
 
-fun execute(command: MetaCommand) {
+fun execute(command: MetaCommand, table: Table) {
     when (command) {
-        MetaCommand.EXIT -> exitProcess(0)
+        MetaCommand.EXIT -> {
+            // This is needed again here,
+            // because `exitProcess` overrides the `finally` keyword.
+            closeDatabase(table)
+            exitProcess(0)
+        }
     }
 }
 
@@ -45,8 +50,8 @@ data class Row(
 )
 
 sealed class PrepareStatementResult {
-    class Success(val value: PrepareStatement): PrepareStatementResult()
-    class Failure(val message: String): PrepareStatementResult()
+    class Success(val value: PrepareStatement) : PrepareStatementResult()
+    class Failure(val message: String) : PrepareStatementResult()
 }
 
 fun parsePrepareStatement(input: String): PrepareStatementResult {

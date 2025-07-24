@@ -1,15 +1,15 @@
 package io.sqlitek
 
-import java.lang.StringBuilder
-import kotlin.random.Random
 import kotlin.test.Test
 
 
 class MainTest {
 
+    val pager = openPager("test.db")
+
     @Test
     fun basicTest() {
-        val table = Table()
+        val table = Table(pager)
         val statements = createInsertStatements(100)
         for (statement in statements) {
             val result = createConnection(statement, table)
