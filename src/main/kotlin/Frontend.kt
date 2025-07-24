@@ -1,7 +1,9 @@
-package github.io
+package io.sqlitek
 
-import github.io.ExecuteResult.*
-import github.io.RowLayout.ROW_SIZE
+import io.sqlitek.ExecuteResult.*
+import io.sqlitek.RowLayout.EMAIL_SIZE
+import io.sqlitek.RowLayout.ROW_SIZE
+import io.sqlitek.RowLayout.USERNAME_SIZE
 import kotlin.system.exitProcess
 
 // Non-SQL statements like .exit are called “meta-commands”.
@@ -42,25 +44,41 @@ data class Row(
     val email: String
 )
 
-fun parsePrepareStatement(input: String): PrepareStatement? {
+sealed class PrepareStatementResult {
+    class Success(val value: PrepareStatement): PrepareStatementResult()
+    class Failure(val message: String): PrepareStatementResult()
+}
+
+fun parsePrepareStatement(input: String): PrepareStatementResult {
     val tokens = input.split(" ")
     val firstWord = tokens.first()
     for (statement in PrepareStatementType.entries) {
         if (statement.value == firstWord) {
             if (statement == PrepareStatementType.SELECT) {
-                return PrepareStatement(statement, null)
+                val prepareStatement = PrepareStatement(statement, null)
+                return PrepareStatementResult.Success(prepareStatement)
             }
             val id = tokens[1].toInt()
+            if (id <= 0) {
+                return PrepareStatementResult.Failure("`id` is not allowed to be negative")
+            }
             val username = tokens[2]
+            if (username.length > USERNAME_SIZE) {
+                return PrepareStatementResult.Failure("`username` exceeds the max length:$USERNAME_SIZE")
+            }
             val email = tokens[3]
+            if (email.length > EMAIL_SIZE) {
+                return PrepareStatementResult.Failure("`email` exceeds the max length:$USERNAME_SIZE")
+            }
             val row = Row(id, username, email)
-            return PrepareStatement(
+            val prepareStatement = PrepareStatement(
                 statement,
                 row
             )
+            return PrepareStatementResult.Success(prepareStatement)
         }
     }
-    return null
+    return PrepareStatementResult.Failure("Unrecognized statement:$input")
 }
 
 sealed class ExecuteResult {
@@ -72,7 +90,12 @@ sealed class ExecuteResult {
 fun execute(statement: PrepareStatement, table: Table) {
     when (statement.type) {
         PrepareStatementType.SELECT -> executeSelect(table)
-        PrepareStatementType.INSERT -> executeInsert(statement.row!!, table)
+        PrepareStatementType.INSERT -> {
+            val result = executeInsert(statement.row!!, table)
+            if (result is TableIsFull) {
+                println("Table is full!!")
+            }
+        }
     }
 }
 
@@ -81,7 +104,7 @@ fun executeInsert(row: Row, table: Table): ExecuteResult {
         return TableIsFull
     }
     val serialized = serialize(row)
-    val slot = rowSlot(table, table.numberOfRows)
+    val slot = table.getCurRowSlot()
     slot.put(0, serialized, 0, serialized.size)
     table.numberOfRows++
     return Success
@@ -89,7 +112,7 @@ fun executeInsert(row: Row, table: Table): ExecuteResult {
 
 fun executeSelect(table: Table): ExecuteResult {
     for (i in 0..<table.numberOfRows) {
-        val slot = rowSlot(table, i)
+        val slot = table.getRowSlot(i)
         slot.position(0)
         val raw = ByteArray(ROW_SIZE)
         slot.get(raw)

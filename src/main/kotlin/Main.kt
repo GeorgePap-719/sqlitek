@@ -1,4 +1,6 @@
-package github.io
+package io.sqlitek
+
+import io.sqlitek.ConnectionResult.*
 
 //TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
@@ -7,20 +9,37 @@ fun main() {
     while (true) {
         println("db > ")
         val input = readln()
-        if (input.first() == '.') {
-            val command = parseMetaCommand(input)
-            if (command == null) {
-                println("Unrecognized meta command:$input")
-                continue
-            }
-            execute(command)
-            continue
+        val result = createConnection(input, table)
+        when (result) {
+            InvalidMetaStatement -> println("Unrecognized meta-statement:$input")
+            is Failure -> println(result.message)
+            // Nothing, just continue.
+            Success -> {}
         }
-        val statement = parsePrepareStatement(input)
-        if (statement == null) {
-            println("Unrecognized statement:$input")
-            continue
-        }
-        execute(statement, table)
     }
+}
+
+fun createConnection(input: String, table: Table): ConnectionResult {
+    if (input.first() == '.') {
+        val command = parseMetaCommand(input)
+        if (command == null) {
+            return InvalidMetaStatement
+        }
+        execute(command)
+        return Success
+    }
+    val statementResult = parsePrepareStatement(input)
+    when (statementResult) {
+        is PrepareStatementResult.Failure -> return Failure(statementResult.message)
+        is PrepareStatementResult.Success -> {
+            execute(statementResult.value, table)
+            return Success
+        }
+    }
+}
+
+sealed class ConnectionResult {
+    object Success : ConnectionResult()
+    class Failure(val message: String) : ConnectionResult()
+    object InvalidMetaStatement : ConnectionResult()
 }
