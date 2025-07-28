@@ -5,7 +5,7 @@ import io.sqlitek.RowLayout.ROW_SIZE
 import kotlin.system.exitProcess
 
 // vim mydb.db
-//:%!xxdq
+//:%!xxd
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         println("Must supply a database filename")
@@ -58,7 +58,9 @@ fun parseInput(input: String, table: Table): ConnectionResult {
 }
 
 sealed class ConnectionResult {
-    object Success : ConnectionResult()
+    object Success : ConnectionResult() {
+        override fun toString(): String = this::class.simpleName!!
+    }
     class Failure(val message: String) : ConnectionResult()
     object InvalidMetaStatement : ConnectionResult()
 }

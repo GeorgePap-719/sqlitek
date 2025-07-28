@@ -5,72 +5,91 @@ import kotlin.test.Test
 
 class MainTest {
 
-    val pager = openPager("test.db")
+    val dbFilename = "test.db"
 
     @Test
     fun basicTest() {
-        val table = Table(pager)
-        val statements = createInsertStatements(100)
+        val table = createConnection(dbFilename)
+        val statements = createInsertStatements(10)
         for (statement in statements) {
-            val result = createConnection(statement, table)
+            val result = parseInput(statement, table)
             assert(result is ConnectionResult.Success)
+            println(result)
         }
         val select = selectStatement()
-        createConnection(select, table)
+        val selectResult = parseInput(select, table)
+        println(selectResult)
     }
 
     // Our db can hold 1400 rows right now because we set the maximum number of pages to 100,
     // and 14 rows can fit in a page.
     @Test
     fun largeInsertTest() {
-        val table = Table()
+        val table = createConnection(dbFilename)
         val statements = createInsertStatements(1401)
         for (statement in statements) {
-            val result = createConnection(statement, table)
+            val result = parseInput(statement, table)
             assert(result is ConnectionResult.Success)
         }
         val select = selectStatement()
-        createConnection(select, table)
+        parsePrepareStatement(select)
     }
 
     @Test
     fun allowMaxStrings() {
-        val table = Table()
+        val table = createConnection(dbFilename)
         val statement = insertStatement(
             1,
             buildString(32),
             buildString(255)
         )
-        val result = createConnection(statement, table)
+        val result = parseInput(statement, table)
         assert(result is ConnectionResult.Success)
         val select = selectStatement()
-        createConnection(select, table)
+        parsePrepareStatement(select)
     }
 
     @Test
     fun doNotAllowGtMaxStrings() {
-        val table = Table()
+        val table = createConnection(dbFilename)
         val statement = insertStatement(
             1,
             buildString(33),
             buildString(256)
         )
-        val result = createConnection(statement, table)
+        val result = parseInput(statement, table)
         check(result is ConnectionResult.Failure)
         println(result.message)
     }
 
     @Test
     fun doNotAllowNegativeId() {
-        val table = Table()
+        val table = createConnection(dbFilename)
         val statement = insertStatement(
             -1,
             buildString(33),
             buildString(256)
         )
-        val result = createConnection(statement, table)
+        val result = parseInput(statement, table)
         check(result is ConnectionResult.Failure)
         println(result.message)
+    }
+
+    /**
+     * Only this test simulates persistence,
+     * because it is the only one we "close" properly the connection.
+     */
+    @Test
+    fun testPersistence() {
+        var table = createConnection(dbFilename)
+        val statement = createInsertStatements(1).first()
+        val result = parseInput(statement, table)
+        assert(result is ConnectionResult.Success)
+        // Simulate we are closing db:
+        table.close()
+        table = createConnection(dbFilename)
+        val select = selectStatement()
+        parseInput(select, table)
     }
 }
 
