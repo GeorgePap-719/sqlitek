@@ -53,7 +53,7 @@ const val TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES
 //A mutable list or array of nullable ByteArrays or ByteBuffers
 // Rows should not cross page boundaries.
 // Since pages probably won’t exist next to each other in memory, this assumption makes it easier to read/write rows
-class Table(val pager: Pager, var numberOfRows: Int = 0): Closeable {
+class Table(val pager: Pager, var numberOfRows: Int = 0) : Closeable {
 
     fun getRowSlot(rowNumber: Int): ByteBuffer {
         val pageNum = rowNumber / ROWS_PER_PAGE
@@ -65,6 +65,24 @@ class Table(val pager: Pager, var numberOfRows: Int = 0): Closeable {
 
     fun getCurRowSlot(): ByteBuffer {
         return getRowSlot(numberOfRows)
+    }
+
+    // --  Cursors --
+
+    fun getCursorValue(cursor: Cursor): ByteBuffer {
+        val rowNumber = cursor.rowNumber
+        val pageNum = rowNumber / ROWS_PER_PAGE
+        val rowOffset = rowNumber % ROWS_PER_PAGE
+        val byteOffset = rowOffset * ROW_SIZE
+        val page = cursor.pager.getPage(pageNum)
+        return ByteBuffer.wrap(page, byteOffset, ROW_SIZE).slice()
+    }
+
+    fun cursorAdvance(cursor: Cursor) {
+        cursor.rowNumber += 1
+        if (cursor.rowNumber >= cursor.table.numberOfRows) {
+            cursor.endOfTable = true
+        }
     }
 
     override fun close() {

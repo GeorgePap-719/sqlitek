@@ -108,21 +108,24 @@ fun executeInsert(row: Row, table: Table): ExecuteResult {
     if (table.numberOfRows >= TABLE_MAX_ROWS) {
         return TableIsFull
     }
+    val cursor = tableEnd(table)
+    val slot = table.getCursorValue(cursor)
     val serialized = serialize(row)
-    val slot = table.getCurRowSlot()
     slot.put(0, serialized, 0, serialized.size)
     table.numberOfRows++
     return Success
 }
 
 fun executeSelect(table: Table): ExecuteResult {
-    for (i in 0..<table.numberOfRows) {
-        val slot = table.getRowSlot(i)
+    val cursor = tableStart(table)
+    while (!cursor.endOfTable) {
+        val slot = table.getCursorValue(cursor)
         slot.position(0)
         val raw = ByteArray(ROW_SIZE)
         slot.get(raw)
         val row = deserialize(raw)
         println(row)
+        table.cursorAdvance(cursor)
     }
     return Success
 }
