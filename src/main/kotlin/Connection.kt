@@ -12,5 +12,5 @@ fun createConnection(filename: String): Table {
         val root = pager.getPage(0)
         initializeLeafNode(root)
     }
-    return Table(pager, numberOfPages, 0)
+    return Table(pager, 0)
 }

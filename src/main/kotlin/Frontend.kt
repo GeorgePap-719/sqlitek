@@ -32,6 +32,7 @@ fun execute(command: MetaCommand, table: Table) {
             closeDatabase(table)
             exitProcess(0)
         }
+
         MetaCommand.CONSTANTS -> println(CONSTANTS)
         MetaCommand.BTREE -> {
             println("Tree:")
@@ -98,6 +99,7 @@ sealed class ExecuteResult {
     object Success : ExecuteResult()
     sealed class Failure : ExecuteResult()
     object TableIsFull : Failure()
+    object DuplicateKey : Failure()
 }
 
 fun execute(statement: PrepareStatement, table: Table) {
@@ -108,6 +110,9 @@ fun execute(statement: PrepareStatement, table: Table) {
             if (result is TableIsFull) {
                 println("Table is full!!")
             }
+            if (result is DuplicateKey) {
+                println("Duplicate Id!")
+            }
         }
     }
 }
@@ -115,8 +120,14 @@ fun execute(statement: PrepareStatement, table: Table) {
 fun executeInsert(row: Row, table: Table): ExecuteResult {
     val node = table.pager.getPage(table.rootPageNumber)
     val numCells = getLeafNodeNumCells(node)
-    if (numCells >= TABLE_MAX_ROWS) return TableIsFull
-    val cursor = tableEnd(table)
+    if (numCells >= LEAF_NODE_MAX_CELLS) return TableIsFull
+    val key = row.id
+    val cursor = find(table, key)
+    val cellNumber = cursor.cellNumber
+    if (cellNumber < numCells) {
+        val keyAtIndex = getLeafNodeKey(node, cellNumber)
+        if (keyAtIndex == key) return DuplicateKey
+    }
     leafNodeInsert(cursor, row.id, row)
     return Success
 }

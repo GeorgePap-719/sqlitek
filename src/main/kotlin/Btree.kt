@@ -90,7 +90,17 @@ fun setLeafNodeValue(node: ByteBuffer, cellNum: Int, value: ByteArray) {
 }
 
 fun initializeLeafNode(node: ByteBuffer) {
+    setNodeType(node, NodeType.LEAF)
     setLeafNodeNumCells(node, 0)
+}
+
+fun getNodeType(node: ByteBuffer): NodeType {
+    val value = node.get(NODE_TYPE_OFFSET)
+    return NodeType.from(value)
+}
+
+fun setNodeType(node: ByteBuffer, type: NodeType) {
+    node.put(NODE_TYPE_OFFSET, type.value)
 }
 
 fun leafNodeToStringDebug(node: ByteBuffer): String {
@@ -120,7 +130,19 @@ fun printLeafNode(node: ByteBuffer) {
 // I define constants for the size and offset of every header field:
 class Btree
 
-enum class NodeType { INTERNAL, LEAF }
+enum class NodeType(val value: Byte) {
+    INTERNAL(0),
+    LEAF(1);
+
+    companion object {
+        fun from(value: Byte): NodeType {
+            for (type in entries) {
+                if (value == type.value) return type
+            }
+            throw IllegalArgumentException("Invalid NodeType:$value")
+        }
+    }
+}
 
 
 fun leafNodeInsert(cursor: Cursor, key: Int, value: Row) {

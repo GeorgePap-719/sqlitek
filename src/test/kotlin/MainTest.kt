@@ -97,6 +97,23 @@ class MainTest {
         // The tutorial tests against the constants, just for the sake of alerting.
         // We will skip it for now.
     }
+
+    //TODO: passes, but we need to refactor the types for this to work.
+    @Test
+    fun testDuplicateId() {
+        val table = createConnection(dbFilename)
+        val statement = insertStatement(
+            1,
+            buildString(32),
+            buildString(255)
+        )
+        val result = parseInput(statement, table)
+        assert(result is ConnectionResult.Success)
+        val result2 = parseInput(statement, table)
+        println(result2)
+        assert(result2 is ConnectionResult.Failure)
+        println(result2)
+    }
 }
 
 // Utils

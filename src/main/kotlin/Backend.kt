@@ -55,7 +55,6 @@ const val TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES
 // Since pages probably won’t exist next to each other in memory, this assumption makes it easier to read/write rows
 class Table(
     val pager: Pager,
-    var numberOfRows: Int = 0,
     var rootPageNumber: Int
 ) : Closeable {
 
