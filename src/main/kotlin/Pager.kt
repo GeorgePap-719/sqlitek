@@ -3,6 +3,7 @@ package io.sqlitek
 import java.io.Closeable
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
 
 // I’m making our page size 4 kilobytes because it’s the same size as a page used in the virtual memory systems of most computer architectures.
 // This means one page in our database corresponds to one page used by the operating system.
@@ -13,7 +14,8 @@ class Pager(
     val fileDescriptor: RandomAccessFile,
     // val pages: Array<ByteArray?> = arrayOfNulls(TABLE_MAX_PAGES)
     // Is this our cache?
-    val cachedPages: Array<ByteArray?>
+    val cachedPages: Array<ByteBuffer?>,
+    var numberOfPages: Int
 ) : Closeable {
     val fileLength get() = fileDescriptor.length()
 
@@ -26,7 +28,7 @@ class Pager(
     // If the requested page lies outside the bounds of the file, we know it should be blank,
     // so we just allocate some memory and return it.
     // The page will be added to the file when we flush the cache to disk later.
-    fun getPage(pageNumber: Int): ByteArray {
+    fun getPage(pageNumber: Int): ByteBuffer {
         require(pageNumber <= TABLE_MAX_PAGES) { "`pageNum` requests page out of bounds:$pageNumber" }
         val cachedPage = cachedPages[pageNumber]
         cachedPage?.let { return it }
@@ -40,15 +42,19 @@ class Pager(
             fileDescriptor.seek((pageNumber * PAGE_SIZE).toLong())
             fileDescriptor.read(page, 0, PAGE_SIZE)
         }
-        cachedPages[pageNumber] = page
-        return page
+        val buffer = ByteBuffer.wrap(page)
+        cachedPages[pageNumber] = buffer
+        if (pageNumber >= this.numberOfPages) {
+            this.numberOfPages = pageNumber + 1
+        }
+        return buffer
     }
 
-    fun flush(pageNumber: Int, size: Int) {
+    fun flush(pageNumber: Int) {
         val page = cachedPages[pageNumber]
         checkNotNull(page) { "Tried to flush null page" }
         fileDescriptor.seek((pageNumber * PAGE_SIZE).toLong())
-        fileDescriptor.write(page, 0, size)
+        fileDescriptor.write(page.array(), 0, PAGE_SIZE)
     }
 
     override fun close() {
@@ -60,5 +66,11 @@ fun openPager(filename: String): Pager {
     val file = File(filename)
     file.createNewFile() // checks also if it exists
     val descriptor = RandomAccessFile(file, "rw") // // Read/Write mode
-    return Pager(descriptor, arrayOfNulls(TABLE_MAX_PAGES))
+    val numPages = descriptor.length() / PAGE_SIZE
+    val rem = descriptor.length() % PAGE_SIZE
+    check(rem == 0L) {
+        "Database file:$filename is not a whole number of pages." +
+                "Corrupt file."
+    }
+    return Pager(descriptor, arrayOfNulls(TABLE_MAX_PAGES), numPages.toInt())
 }

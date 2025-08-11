@@ -2,7 +2,8 @@ package io.sqlitek
 
 class Cursor(
     val table: Table,
-    var rowNumber: Int,
+    var pageNumber: Int,
+    var cellNumber: Int,
     // Indicates a position one past the last element.
     var endOfTable: Boolean
 ) {
@@ -10,9 +11,15 @@ class Cursor(
 }
 
 fun tableStart(table: Table): Cursor {
-    return Cursor(table, 0, table.numberOfRows == 0)
+    val pageNumber = table.rootPageNumber
+    val root = table.pager.getPage(pageNumber)
+    val numCells = getLeafNodeNumCells(root)
+    return Cursor(table, 0, numCells, numCells == 0)
 }
 
 fun tableEnd(table: Table): Cursor {
-    return Cursor(table, table.numberOfRows, true)
+    val pageNumber = table.rootPageNumber
+    val root = table.pager.getPage(pageNumber)
+    val numCells = getLeafNodeNumCells(root)
+    return Cursor(table, pageNumber, numCells, true)
 }

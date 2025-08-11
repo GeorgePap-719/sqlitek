@@ -48,41 +48,29 @@ const val TABLE_MAX_PAGES = 100
 const val ROWS_PER_PAGE = PAGE_SIZE / ROW_SIZE
 const val TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES
 
-// We don’t have void* or fixed-size arrays in Kotlin, so we represent it using:
+// We don’t have void* in Kotlin, so we represent it using:
 //
-//A mutable list or array of nullable ByteArrays or ByteBuffers
+// A mutable list or array of nullable ByteArrays or ByteBuffers
 // Rows should not cross page boundaries.
 // Since pages probably won’t exist next to each other in memory, this assumption makes it easier to read/write rows
-class Table(val pager: Pager, var numberOfRows: Int = 0) : Closeable {
-
-    fun getRowSlot(rowNumber: Int): ByteBuffer {
-        val pageNum = rowNumber / ROWS_PER_PAGE
-        val rowOffset = rowNumber % ROWS_PER_PAGE
-        val byteOffset = rowOffset * ROW_SIZE
-        val page = pager.getPage(pageNum)
-        return ByteBuffer.wrap(page, byteOffset, ROW_SIZE).slice()
-    }
-
-    fun getCurRowSlot(): ByteBuffer {
-        return getRowSlot(numberOfRows)
-    }
-
-    // --  Cursors --
+class Table(
+    val pager: Pager,
+    var numberOfRows: Int = 0,
+    var rootPageNumber: Int
+) : Closeable {
 
     fun getCursorValue(cursor: Cursor): ByteBuffer {
-        val rowNumber = cursor.rowNumber
-        val pageNum = rowNumber / ROWS_PER_PAGE
-        val rowOffset = rowNumber % ROWS_PER_PAGE
-        val byteOffset = rowOffset * ROW_SIZE
+        val pageNum = cursor.pageNumber
         val page = cursor.pager.getPage(pageNum)
-        return ByteBuffer.wrap(page, byteOffset, ROW_SIZE).slice()
+        return getLeafNodeValue(page, cursor.cellNumber)
     }
 
     fun cursorAdvance(cursor: Cursor) {
-        cursor.rowNumber += 1
-        if (cursor.rowNumber >= cursor.table.numberOfRows) {
-            cursor.endOfTable = true
-        }
+        val pageNumber = cursor.pageNumber
+        val node = pager.getPage(pageNumber)
+        cursor.cellNumber += 1
+        val numCells = getLeafNodeNumCells(node)
+        if (cursor.cellNumber >= numCells) cursor.endOfTable = true
     }
 
     override fun close() {
@@ -96,21 +84,10 @@ class Table(val pager: Pager, var numberOfRows: Int = 0) : Closeable {
 fun closeDatabase(table: Table) {
     val pager = table.pager
     val cachedPages = pager.cachedPages
-    val numOfFullPages = table.numberOfRows / ROWS_PER_PAGE
-    for (i in 0..<numOfFullPages) {
+    for (i in 0..<pager.numberOfPages) {
         if (cachedPages[i] == null) continue
-        pager.flush(i, PAGE_SIZE)
+        pager.flush(i)
         cachedPages[i] = null
-    }
-    // There may be a partial page to write to the end of the file.
-    // This should not be needed after we switch to a B-tree.
-    val additionalRows = table.numberOfRows % ROWS_PER_PAGE
-    if (additionalRows > 0) {
-        val num = numOfFullPages
-        if (pager.cachedPages[num] != null) {
-            pager.flush(num, additionalRows * ROW_SIZE)
-            pager.cachedPages[num] = null
-        }
     }
     pager.fileDescriptor.close()
     for (i in 0..<TABLE_MAX_PAGES) {

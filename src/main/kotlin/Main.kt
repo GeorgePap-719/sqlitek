@@ -1,7 +1,6 @@
 package io.sqlitek
 
 import io.sqlitek.ConnectionResult.*
-import io.sqlitek.RowLayout.ROW_SIZE
 import kotlin.system.exitProcess
 
 // vim mydb.db
@@ -25,17 +24,6 @@ fun main(args: Array<String>) {
             }
         }
     }
-}
-
-// By opening a connection, we mean:
-// - opening the database file
-// - initializing a pager data structure
-// - initializing a table data structure
-fun createConnection(filename: String): Table {
-    val pager = openPager(filename)
-    val rowsNum = pager.fileLength / ROW_SIZE
-    val table = Table(pager, rowsNum.toInt())
-    return table
 }
 
 fun parseInput(input: String, table: Table): ConnectionResult {

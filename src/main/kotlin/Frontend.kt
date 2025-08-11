@@ -9,7 +9,9 @@ import kotlin.system.exitProcess
 // Non-SQL statements like .exit are called “meta-commands”.
 // They all start with a dot, so we check for them and handle them in a separate function.
 enum class MetaCommand(val value: String) {
-    EXIT(".exit")
+    EXIT(".exit"),
+    CONSTANTS(".constants"),
+    BTREE(".btree")
 }
 
 fun parseMetaCommand(input: String): MetaCommand? {
@@ -29,6 +31,12 @@ fun execute(command: MetaCommand, table: Table) {
             // because `exitProcess` overrides the `finally` keyword.
             closeDatabase(table)
             exitProcess(0)
+        }
+        MetaCommand.CONSTANTS -> println(CONSTANTS)
+        MetaCommand.BTREE -> {
+            println("Tree:")
+            val page = table.pager.getPage(0)
+            printLeafNode(page)
         }
     }
 }
@@ -105,14 +113,11 @@ fun execute(statement: PrepareStatement, table: Table) {
 }
 
 fun executeInsert(row: Row, table: Table): ExecuteResult {
-    if (table.numberOfRows >= TABLE_MAX_ROWS) {
-        return TableIsFull
-    }
+    val node = table.pager.getPage(table.rootPageNumber)
+    val numCells = getLeafNodeNumCells(node)
+    if (numCells >= TABLE_MAX_ROWS) return TableIsFull
     val cursor = tableEnd(table)
-    val slot = table.getCursorValue(cursor)
-    val serialized = serialize(row)
-    slot.put(0, serialized, 0, serialized.size)
-    table.numberOfRows++
+    leafNodeInsert(cursor, row.id, row)
     return Success
 }
 

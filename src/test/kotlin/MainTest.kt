@@ -91,6 +91,12 @@ class MainTest {
         val select = selectStatement()
         parseInput(select, table)
     }
+
+    @Test
+    fun testConstants() {
+        // The tutorial tests against the constants, just for the sake of alerting.
+        // We will skip it for now.
+    }
 }
 
 // Utils
