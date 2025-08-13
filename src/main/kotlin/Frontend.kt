@@ -119,7 +119,6 @@ fun execute(statement: PrepareStatement, table: Table) {
 fun executeInsert(row: Row, table: Table): ExecuteResult {
     val node = table.pager.getPage(table.rootPageNumber)
     val numCells = getLeafNodeNumCells(node)
-    if (numCells >= LEAF_NODE_MAX_CELLS) return TableIsFull
     val key = row.id
     val cursor = find(table, key)
     val cellNumber = cursor.cellNumber

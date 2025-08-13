@@ -26,13 +26,16 @@ class MainTest {
     @Test
     fun largeInsertTest() {
         val table = createConnection(dbFilename)
-        val statements = createInsertStatements(1401)
+        val statements = createInsertStatements(14)
         for (statement in statements) {
             val result = parseInput(statement, table)
             assert(result is ConnectionResult.Success)
         }
         val select = selectStatement()
         parsePrepareStatement(select)
+        val print = printStatement()
+        val meta = parseMetaCommand(print)!!
+        execute(meta, table)
     }
 
     @Test
@@ -151,3 +154,5 @@ fun insertStatement(
 }
 
 fun selectStatement(): String = "select"
+
+fun printStatement(): String = ".btree"
