@@ -36,8 +36,7 @@ fun execute(command: MetaCommand, table: Table) {
         MetaCommand.CONSTANTS -> println(CONSTANTS)
         MetaCommand.BTREE -> {
             println("Tree:")
-            val page = table.pager.getPage(0)
-            printLeafNode(page)
+            printTree(table.pager, 0, 0)
         }
     }
 }

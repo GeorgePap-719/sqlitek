@@ -11,6 +11,7 @@ fun createConnection(filename: String): Table {
         // New database file. Initialize page 0 as leaf node.
         val root = pager.getPage(0)
         initializeLeafNode(root)
+        setNodeRoot(root, true)
     }
     return Table(pager, 0)
 }

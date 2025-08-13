@@ -72,6 +72,8 @@ class Table(
         if (cursor.cellNumber >= numCells) cursor.endOfTable = true
     }
 
+    fun getRootPage(): ByteBuffer = pager.getPage(rootPageNumber)
+
     override fun close() {
         closeDatabase(this)
     }

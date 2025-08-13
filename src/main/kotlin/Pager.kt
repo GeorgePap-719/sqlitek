@@ -15,6 +15,7 @@ class Pager(
     // val pages: Array<ByteArray?> = arrayOfNulls(TABLE_MAX_PAGES)
     // Is this our cache?
     val cachedPages: Array<ByteBuffer?>,
+    // We keep track of pages + 1 here?
     var numberOfPages: Int
 ) : Closeable {
     val fileLength get() = fileDescriptor.length()
@@ -56,6 +57,10 @@ class Pager(
         fileDescriptor.seek((pageNumber * PAGE_SIZE).toLong())
         fileDescriptor.write(page.array(), 0, PAGE_SIZE)
     }
+
+    // Until we start recycling free pages, new pages will always
+    // go onto the end of the database file.
+    fun getUnsuedPageNum(): Int = numberOfPages
 
     override fun close() {
         fileDescriptor.close()
