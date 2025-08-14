@@ -31,3 +31,26 @@ fun ByteBuffer.copyInto(
     src.position(oldSrcPos)
     dest.position(oldDestPos)
 }
+
+/**
+ * Similar to C's "memmove".
+ */
+fun ByteBuffer.moveInto(
+    dest: ByteBuffer,
+    destOffset: Int = 0,
+    srcOffset: Int = 0,
+    length: Int = this.limit()
+) {
+    val src = this
+    //TODO: we can improve this by avoiding the extra buffer.
+    // We could just copy backwards.
+    if (src == dest) {
+        val buffer = ByteArray(LEAF_NODE_CELL_SIZE)
+        src.position(srcOffset)
+        src.get(buffer)
+        dest.position(destOffset)
+        dest.put(buffer)
+        return
+    }
+    copyInto(dest, destOffset, srcOffset, length)
+}

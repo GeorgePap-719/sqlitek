@@ -348,7 +348,8 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
      Insert the new value in one of the two nodes.
      Update parent or create a new parent.
     */
-    val pager = cursor.table.pager
+    val table = cursor.table
+    val pager = table.pager
     val oldNode = pager.getPage(cursor.pageNumber)
     val newPageNum = pager.getUnsuedPageNum()
     val newNode = pager.getPage(newPageNum)
@@ -374,13 +375,13 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
             // Shift from old position (i - 1) into destination.
             i > cellNum -> {
                 val srcOffset = getLeafNodeCellOffset(i - 1)
-                copyCell(oldNode, srcOffset, destinationNode, destOffset)
+                moveCell(oldNode, srcOffset, destinationNode, destOffset)
             }
 
             // i < cursor.cellNum -> copy from same i.
             else -> {
                 val srcOffset = getLeafNodeCellOffset(i)
-                copyCell(oldNode, srcOffset, destinationNode, destOffset)
+                moveCell(oldNode, srcOffset, destinationNode, destOffset)
             }
         }
     }
@@ -389,18 +390,14 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
     setLeafNodeNumCells(newNode, LEAF_NODE_RIGHT_SPLIT_COUNT)
     pager.numberOfPages = maxOf(pager.numberOfPages, newPageNum + 1)
     if (isRoot(oldNode)) {
-        error("todo")
+        createNewRoot(table, newPageNum)
     } else {
         error("Need to implement updating parent after split")
     }
 }
 
-private fun copyCell(src: ByteBuffer, srcOffset: Int, dest: ByteBuffer, destOffset: Int) {
-    val buffer = ByteArray(LEAF_NODE_CELL_SIZE)
-    src.position(srcOffset)
-    src.get(buffer)
-    dest.position(destOffset)
-    dest.put(buffer)
+private fun moveCell(src: ByteBuffer, srcOffset: Int, dest: ByteBuffer, destOffset: Int) {
+    src.moveInto(dest, destOffset, srcOffset, LEAF_NODE_CELL_SIZE)
 }
 
 /**
@@ -408,7 +405,7 @@ private fun copyCell(src: ByteBuffer, srcOffset: Int, dest: ByteBuffer, destOffs
  * Now N is empty. Add 〈L, K,R〉 in N, where K is the max key in L. Page N remains the root.
  * Note that the depth of the tree has increased by one, but the new tree remains height balanced without violating any B+-tree property.
  */
-private fun createNewRoot(table: Table, rightChildPageNum: Int): ByteBuffer {
+private fun createNewRoot(table: Table, rightChildPageNum: Int) {
     /*
      Handle splitting the root.
      Old root copied to new page, becomes left child.
@@ -417,12 +414,18 @@ private fun createNewRoot(table: Table, rightChildPageNum: Int): ByteBuffer {
      New root node points to two children.
    */
     val root = table.getRootPage()
-    val rightChild = table.pager.getPage(rightChildPageNum)
+    //val rightChild = table.pager.getPage(rightChildPageNum)
     val leftChildPageNum = table.pager.getUnsuedPageNum()
     val leftChild = table.pager.getPage(leftChildPageNum)
     // The old root is copied to the left child so we can reuse the root page.
     root.copyInto(leftChild, length = PAGE_SIZE)
     setNodeRoot(leftChild, false)
     // Finally, we initialize the root page as a new internal node with two children.
-    TODO()
+    initializeInternalNode(root)
+    setNodeRoot(root, true)
+    setInternalNodeNumKeys(root, 1)
+    setInternalNodeChild(root, 0, leftChildPageNum)
+    val leftChildMaxKey = getNodeMaxKey(leftChild)
+    setInternalNodeKey(root, 0, leftChildMaxKey)
+    setInternalNodeRightChild(root, rightChildPageNum)
 }
