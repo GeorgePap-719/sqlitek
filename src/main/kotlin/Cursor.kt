@@ -27,7 +27,32 @@ fun find(table: Table, key: Int): Cursor {
     if (getNodeType(rootNode) == NodeType.LEAF) {
         return findLeafNode(table, rootPageNumber, key)
     }
-    error("Need to implement searching an internal node")
+    return findInternalNode(table, rootPageNumber, key)
+}
+
+// This function performs binary search to find the child that should contain the given key.
+// Note that the key to the right of each child pointer is the maximum key contained by that child.
+fun findInternalNode(table: Table, pageNum: Int, key: Int): Cursor {
+    val node = table.pager.getPage(pageNum)
+    val numKeys = getInternalNodeNumKeys(node)
+    /* Binary search to find index of child to search */
+    var min = 0
+    var max = numKeys
+    while (min != max) {
+        val index = (min + max) / 2 //TODO: guard against overflow
+        val rightmost = getInternalNodeKey(node, index)
+        if (rightmost >= key) {
+            max = index
+        } else {
+            min = index + 1
+        }
+    }
+    val childNum = getInternalNodeChild(node, min)
+    val child = table.pager.getPage(childNum)
+    return when (getNodeType(child)) {
+        NodeType.INTERNAL -> findInternalNode(table, childNum, key)
+        NodeType.LEAF -> findLeafNode(table, childNum, key)
+    }
 }
 
 // This will either return:
@@ -38,10 +63,10 @@ fun findLeafNode(table: Table, pageNum: Int, key: Int): Cursor {
     val node = table.pager.getPage(pageNum)
     val numberOfCells = getLeafNodeNumCells(node)
     // Binary search:
-    var minIndex = 0
+    var min = 0
     var onePastMaxIndex = numberOfCells
-    while (onePastMaxIndex != minIndex) {
-        val index = (minIndex + onePastMaxIndex) / 2 //TODO: guard against overflow
+    while (onePastMaxIndex != min) {
+        val index = (min + onePastMaxIndex) / 2 //TODO: guard against overflow
         val keyAtIndex = getLeafNodeKey(node, index)
         if (key == keyAtIndex) {
             return Cursor(table, pageNum, index, false)
@@ -49,8 +74,8 @@ fun findLeafNode(table: Table, pageNum: Int, key: Int): Cursor {
         if (key < keyAtIndex) {
             onePastMaxIndex = index
         } else {
-            minIndex = index + 1
+            min = index + 1
         }
     }
-    return Cursor(table, pageNum, minIndex, false)
+    return Cursor(table, pageNum, min, false)
 }

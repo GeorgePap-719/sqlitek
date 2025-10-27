@@ -429,3 +429,4 @@ private fun createNewRoot(table: Table, rightChildPageNum: Int) {
     setInternalNodeKey(root, 0, leftChildMaxKey)
     setInternalNodeRightChild(root, rightChildPageNum)
 }
+
