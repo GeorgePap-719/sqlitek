@@ -177,6 +177,9 @@ const val INTERNAL_NODE_KEY_SIZE = Int.SIZE_BYTES
 const val INTERNAL_NODE_CHILD_SIZE = Int.SIZE_BYTES
 const val INTERNAL_NODE_CELL_SIZE = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE
 
+// Keep this small for testing.
+const val INTERNAL_NODE_MAX_CELLS = 3
+
 fun getInternalNodeNumKeys(node: ByteBuffer): Int {
     return node.getInt(INTERNAL_NODE_NUM_KEYS_OFFSET)
 }
@@ -349,12 +352,15 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
     */
     val table = cursor.table
     val oldNode = table.getPage(cursor.pageNumber)
-    val newPageNum = table.getUnsuedPageNum()
-    val newNode = table.getPage(newPageNum)
+    val oldMax = getNodeMaxKey(oldNode)
+    val newPageNumber = table.getUnsuedPageNum()
+    val newNode = table.getPage(newPageNumber)
     initializeLeafNode(newNode)
+    val oldParentPage = getParentNode(oldNode)
+    setParentNode(oldNode, oldParentPage)
     val oldNext = getLeafNodeNextLeaf(oldNode)
     setLeafNodeNextLeaf(newNode, oldNext)
-    setLeafNodeNextLeaf(oldNode, newPageNum)
+    setLeafNodeNextLeaf(oldNode, newPageNumber)
     /*
      All existing keys plus new key should be divided
      evenly between old (left) and new (right) nodes.
@@ -370,10 +376,7 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
             i == cellNum -> {
                 setLeafNodeKey(destinationNode, indexWithinNode, key)
                 val serialized = serialize(value)
-                //TODO: maybe there is a bug here if we see large ids
-//                val leafValue = getLeafNodeValue(destinationNode, indexWithinNode)
                 setLeafNodeValue(destinationNode, indexWithinNode, serialized)
-                setLeafNodeKey(destinationNode, indexWithinNode, key)
             }
 
             // Shift from old position (i - 1) into destination.
@@ -392,16 +395,24 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
     // Update cell counts in each node’s header:
     setLeafNodeNumCells(oldNode, LEAF_NODE_LEFT_SPLIT_COUNT)
     setLeafNodeNumCells(newNode, LEAF_NODE_RIGHT_SPLIT_COUNT)
-    table.numberOfPages = maxOf(table.numberOfPages, newPageNum + 1)
+    table.numberOfPages = maxOf(table.numberOfPages, newPageNumber + 1)
     if (isRoot(oldNode)) {
-        createNewRoot(table, newPageNum)
+        createNewRoot(table, newPageNumber)
     } else {
-        error("Need to implement updating parent after split")
+        val parentPageNumber = getParentNode(oldNode)
+        val newMax = getNodeMaxKey(oldNode)
+        val parent = table.getPage(parentPageNumber)
+        updateInternalNodeKey(parent, oldMax, newMax)
+        internalNodeInsert(table, parentPageNumber, newPageNumber)
     }
 }
 
-fun getParentPage(node: ByteBuffer): Int {
+fun getParentNode(node: ByteBuffer): Int {
     return node.getInt(PARENT_POINTER_OFFSET)
+}
+
+fun setParentNode(node: ByteBuffer, pageNumber: Int) {
+    node.putInt(PARENT_POINTER_OFFSET, pageNumber)
 }
 
 fun updateInternalNodeKey(node: ByteBuffer, oldKey: Int, newKey: Int) {
@@ -409,9 +420,35 @@ fun updateInternalNodeKey(node: ByteBuffer, oldKey: Int, newKey: Int) {
     setInternalNodeKey(node, childIndex, newKey)
 }
 
-// Adds a new child/key pair to parent that corresponds to child.
 fun internalNodeInsert(table: Table, parentPageNumber: Int, childPageNumber: Int) {
-    TODO()
+    // Adds a new child/key pair to parent that corresponds to child.
+    val parent = table.getPage(parentPageNumber)
+    val child = table.getPage(childPageNumber)
+    val childMaxKey = getNodeMaxKey(child)
+    val index = findInternalNodeChildIndex(parent, childMaxKey)
+    val parentNumKeys = getInternalNodeNumKeys(parent)
+    setInternalNodeNumKeys(parent, parentNumKeys + 1)
+    if (parentNumKeys >= INTERNAL_NODE_MAX_CELLS) {
+        error("Need to implement splitting internal node")
+    }
+    val rightChildPageNum = getInternalNodeRightChild(parent)
+    val rightChild = table.getPage(rightChildPageNum)
+    val rightChildMaxKey = getNodeMaxKey(rightChild)
+    if (childMaxKey > rightChildMaxKey) {
+        // Replace right child.
+        setInternalNodeChild(parent, parentNumKeys, rightChildPageNum)
+        setInternalNodeKey(parent, parentNumKeys, rightChildMaxKey)
+        setInternalNodeRightChild(parent, childPageNumber)
+    } else {
+        // Make room for new cell.
+        for (i in parentNumKeys downTo index + 1) {
+            val destOffset = getInternalNodeCellOffset(i)
+            val srcOffset = getInternalNodeCellOffset(i - 1)
+            parent.copyInto(destOffset, srcOffset, INTERNAL_NODE_CELL_SIZE)
+        }
+        setInternalNodeChild(parent, index, childPageNumber)
+        setInternalNodeKey(parent, index, childMaxKey)
+    }
 }
 
 private fun moveCell(src: ByteBuffer, srcOffset: Int, dest: ByteBuffer, destOffset: Int) {
@@ -432,8 +469,8 @@ private fun createNewRoot(table: Table, rightChildPageNum: Int) {
      New root node points to two children.
    */
     val root = table.getRootPage()
-    //val rightChild = table.pager.getPage(rightChildPageNum)
     val leftChildPageNum = table.getUnsuedPageNum()
+    val rightChild = table.getPage(rightChildPageNum)
     val leftChild = table.getPage(leftChildPageNum)
     // The old root is copied to the left child so we can reuse the root page.
     root.copyInto(leftChild, length = PAGE_SIZE)
@@ -446,5 +483,8 @@ private fun createNewRoot(table: Table, rightChildPageNum: Int) {
     val leftChildMaxKey = getNodeMaxKey(leftChild)
     setInternalNodeKey(root, 0, leftChildMaxKey)
     setInternalNodeRightChild(root, rightChildPageNum)
+    val rootPageNumber = table.rootPageNumber
+    setParentNode(leftChild, rootPageNumber)
+    setParentNode(rightChild, rootPageNumber)
 }
 
