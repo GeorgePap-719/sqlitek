@@ -4,10 +4,7 @@ import io.sqlitek.ExecuteResult.*
 import io.sqlitek.RowLayout.EMAIL_SIZE
 import io.sqlitek.RowLayout.ROW_SIZE
 import io.sqlitek.RowLayout.USERNAME_SIZE
-import io.sqlitek.btree.getLeafNodeKey
-import io.sqlitek.btree.getLeafNodeNumCells
-import io.sqlitek.btree.leafNodeInsert
-import io.sqlitek.btree.printTree
+import io.sqlitek.btree.*
 import kotlin.system.exitProcess
 
 // Non-SQL statements like .exit are called “meta-commands”.

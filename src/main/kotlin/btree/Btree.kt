@@ -310,7 +310,7 @@ class Btree
 
 
 fun leafNodeInsert(cursor: Cursor, key: Int, value: Row) {
-    val node = cursor.pager.getPage(cursor.pageNumber)
+    val node = cursor.table.getPage(cursor.pageNumber)
     val numCells = getLeafNodeNumCells(node)
     if (numCells >= LEAF_NODE_MAX_CELLS) {
         // Node is full.
