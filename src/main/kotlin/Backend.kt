@@ -1,6 +1,9 @@
 package io.sqlitek
 
 import io.sqlitek.RowLayout.ROW_SIZE
+import io.sqlitek.btree.getLeafNodeNextLeaf
+import io.sqlitek.btree.getLeafNodeNumCells
+import io.sqlitek.btree.getLeafNodeValue
 import java.io.Closeable
 import java.nio.ByteBuffer
 
@@ -42,7 +45,6 @@ fun deserialize(input: ByteArray): Row {
     return Row(id, username, email)
 }
 
-
 const val TABLE_MAX_PAGES = 100
 
 const val ROWS_PER_PAGE = PAGE_SIZE / ROW_SIZE
@@ -69,7 +71,17 @@ class Table(
         val node = pager.getPage(pageNumber)
         cursor.cellNumber += 1
         val numCells = getLeafNodeNumCells(node)
-        if (cursor.cellNumber >= numCells) cursor.endOfTable = true
+        /* Advance to next leaf node */
+        if (cursor.cellNumber >= numCells) {
+            val nextPageNumber = getLeafNodeNextLeaf(node)
+            if (nextPageNumber == 0) {
+                /* This was the rightmost leaf */
+                cursor.endOfTable = true
+            } else {
+                cursor.pageNumber = nextPageNumber
+                cursor.cellNumber = 0
+            }
+        }
     }
 
     fun getRootPage(): ByteBuffer = pager.getPage(rootPageNumber)

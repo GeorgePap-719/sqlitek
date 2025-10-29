@@ -1,5 +1,13 @@
 package io.sqlitek
 
+import io.sqlitek.btree.NodeType
+import io.sqlitek.btree.getInternalNodeChild
+import io.sqlitek.btree.getInternalNodeKey
+import io.sqlitek.btree.getInternalNodeNumKeys
+import io.sqlitek.btree.getLeafNodeKey
+import io.sqlitek.btree.getLeafNodeNumCells
+import io.sqlitek.btree.getNodeType
+
 class Cursor(
     val table: Table,
     var pageNumber: Int,
@@ -11,9 +19,11 @@ class Cursor(
 }
 
 fun tableStart(table: Table): Cursor {
-    val pageNumber = table.rootPageNumber
-    val root = table.pager.getPage(pageNumber)
-    val numCells = getLeafNodeNumCells(root)
+    // Even if key 0 does not exist in the table,
+    // this method will return the position of the lowest id (the start of the left-most leaf node).
+    val cursor = find(table, 0)
+    val node = table.pager.getPage(cursor.pageNumber)
+    val numCells = getLeafNodeNumCells(node)
     return Cursor(table, 0, numCells, numCells == 0)
 }
 

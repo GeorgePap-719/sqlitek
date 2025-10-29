@@ -1,6 +1,14 @@
-package io.sqlitek
+package io.sqlitek.btree
 
+import io.sqlitek.Cursor
+import io.sqlitek.PAGE_SIZE
+import io.sqlitek.Pager
+import io.sqlitek.Row
 import io.sqlitek.RowLayout.ROW_SIZE
+import io.sqlitek.Table
+import io.sqlitek.copyInto
+import io.sqlitek.moveInto
+import io.sqlitek.serialize
 import java.nio.ByteBuffer
 
 /*
@@ -36,8 +44,11 @@ const val COMMON_NODE_HEADER_SIZE =
 const val LEAF_NODE_NUM_CELLS_SIZE = UInt.SIZE_BYTES            // 4
 const val LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE
 
+const val LEAF_NODE_NEXT_LEAF_SIZE = UInt.SIZE_BYTES
+const val LEAF_NODE_NEXT_LEAF_OFFSET = LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE
+
 const val LEAF_NODE_HEADER_SIZE =
-    COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE
+    COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE + LEAF_NODE_NEXT_LEAF_SIZE
 
 /*
  * Leaf Node Body Layout
@@ -113,6 +124,7 @@ fun initializeLeafNode(node: ByteBuffer) {
     setNodeType(node, NodeType.LEAF)
     setNodeRoot(node, false)
     setLeafNodeNumCells(node, 0)
+    setLeafNodeNextLeaf(node, 0) // 0 represents no sibling
 }
 
 fun getNodeType(node: ByteBuffer): NodeType {
@@ -122,6 +134,14 @@ fun getNodeType(node: ByteBuffer): NodeType {
 
 fun setNodeType(node: ByteBuffer, type: NodeType) {
     node.put(NODE_TYPE_OFFSET, type.value)
+}
+
+fun getLeafNodeNextLeaf(node: ByteBuffer): Int {
+    return node.getInt(LEAF_NODE_NEXT_LEAF_OFFSET)
+}
+
+fun setLeafNodeNextLeaf(node: ByteBuffer, value: Int) {
+    node.putInt(LEAF_NODE_NEXT_LEAF_OFFSET, value)
 }
 
 fun leafNodeToStringDebug(node: ByteBuffer): String {
@@ -295,20 +315,6 @@ fun printTree(pager: Pager, pageNum: Int, indentationLevel: Int) {
 // I define constants for the size and offset of every header field:
 class Btree
 
-enum class NodeType(val value: Byte) {
-    INTERNAL(0),
-    LEAF(1);
-
-    companion object {
-        fun from(value: Byte): NodeType {
-            for (type in entries) {
-                if (value == type.value) return type
-            }
-            throw IllegalArgumentException("Invalid NodeType:$value")
-        }
-    }
-}
-
 
 fun leafNodeInsert(cursor: Cursor, key: Int, value: Row) {
     val node = cursor.pager.getPage(cursor.pageNumber)
@@ -354,6 +360,9 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
     val newPageNum = pager.getUnsuedPageNum()
     val newNode = pager.getPage(newPageNum)
     initializeLeafNode(newNode)
+    val oldNext = getLeafNodeNextLeaf(oldNode)
+    setLeafNodeNextLeaf(newNode, oldNext)
+    setLeafNodeNextLeaf(oldNode, newPageNum)
     /*
      All existing keys plus new key should be divided
      evenly between old (left) and new (right) nodes.
@@ -369,7 +378,10 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
             i == cellNum -> {
                 setLeafNodeKey(destinationNode, indexWithinNode, key)
                 val serialized = serialize(value)
+                //TODO: maybe there is a bug here if we see large ids
+//                val leafValue = getLeafNodeValue(destinationNode, indexWithinNode)
                 setLeafNodeValue(destinationNode, indexWithinNode, serialized)
+                setLeafNodeKey(destinationNode, indexWithinNode, key)
             }
 
             // Shift from old position (i - 1) into destination.

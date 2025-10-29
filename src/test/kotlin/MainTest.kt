@@ -117,6 +117,18 @@ class MainTest {
         assert(result2 is ConnectionResult.Failure)
         println(result2)
     }
+
+    @Test
+    fun insert15Rows() {
+        val table = createConnection(dbFilename)
+        val insertStatements = createInsertStatements(15)
+        for (statement in insertStatements) {
+            val result = parseInput(statement, table)
+            assert(result is ConnectionResult.Success)
+        }
+        val select = selectStatement()
+        parseInput(select, table)
+    }
 }
 
 // Utils

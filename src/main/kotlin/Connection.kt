@@ -1,5 +1,8 @@
 package io.sqlitek
 
+import io.sqlitek.btree.initializeLeafNode
+import io.sqlitek.btree.setNodeRoot
+
 // By opening a connection, we mean:
 // - opening the database file
 // - initializing a pager data structure

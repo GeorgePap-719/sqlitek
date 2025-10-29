@@ -1,5 +1,6 @@
 package io.sqlitek
 
+import io.sqlitek.btree.LEAF_NODE_CELL_SIZE
 import java.nio.ByteBuffer
 
 /**
