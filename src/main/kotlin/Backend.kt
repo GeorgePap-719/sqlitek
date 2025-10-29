@@ -1,10 +1,6 @@
 package io.sqlitek
 
 import io.sqlitek.RowLayout.ROW_SIZE
-import io.sqlitek.btree.getLeafNodeNextLeaf
-import io.sqlitek.btree.getLeafNodeNumCells
-import io.sqlitek.btree.getLeafNodeValue
-import java.io.Closeable
 import java.nio.ByteBuffer
 
 object RowLayout {
@@ -43,67 +39,4 @@ fun deserialize(input: ByteArray): Row {
     buffer.get(emailBytes)
     val email = emailBytes.toString(RowLayout.CHARSET).trimEnd('\u0000')
     return Row(id, username, email)
-}
-
-const val TABLE_MAX_PAGES = 100
-
-const val ROWS_PER_PAGE = PAGE_SIZE / ROW_SIZE
-const val TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES
-
-// We don’t have void* in Kotlin, so we represent it using:
-//
-// A mutable list or array of nullable ByteArrays or ByteBuffers
-// Rows should not cross page boundaries.
-// Since pages probably won’t exist next to each other in memory, this assumption makes it easier to read/write rows
-class Table(
-    val pager: Pager,
-    var rootPageNumber: Int
-) : Closeable {
-
-    fun getCursorValue(cursor: Cursor): ByteBuffer {
-        val pageNum = cursor.pageNumber
-        val page = cursor.pager.getPage(pageNum)
-        return getLeafNodeValue(page, cursor.cellNumber)
-    }
-
-    fun cursorAdvance(cursor: Cursor) {
-        val pageNumber = cursor.pageNumber
-        val node = pager.getPage(pageNumber)
-        cursor.cellNumber += 1
-        val numCells = getLeafNodeNumCells(node)
-        /* Advance to next leaf node */
-        if (cursor.cellNumber >= numCells) {
-            val nextPageNumber = getLeafNodeNextLeaf(node)
-            if (nextPageNumber == 0) {
-                /* This was the rightmost leaf */
-                cursor.endOfTable = true
-            } else {
-                cursor.pageNumber = nextPageNumber
-                cursor.cellNumber = 0
-            }
-        }
-    }
-
-    fun getRootPage(): ByteBuffer = pager.getPage(rootPageNumber)
-
-    override fun close() {
-        closeDatabase(this)
-    }
-}
-
-// flushes the page cache to disk
-// closes the database file
-// frees the memory for the Pager and Table data structures
-fun closeDatabase(table: Table) {
-    val pager = table.pager
-    val cachedPages = pager.cachedPages
-    for (i in 0..<pager.numberOfPages) {
-        if (cachedPages[i] == null) continue
-        pager.flush(i)
-        cachedPages[i] = null
-    }
-    pager.fileDescriptor.close()
-    for (i in 0..<TABLE_MAX_PAGES) {
-        if (pager.cachedPages[i] != null) pager.cachedPages[i] = null
-    }
 }

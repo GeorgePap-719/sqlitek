@@ -1,15 +1,7 @@
 package io.sqlitek.btree
 
-import io.sqlitek.Cursor
-import io.sqlitek.PAGE_SIZE
-import io.sqlitek.Pager
-import io.sqlitek.Row
+import io.sqlitek.*
 import io.sqlitek.RowLayout.ROW_SIZE
-import io.sqlitek.Table
-import io.sqlitek.copyInto
-import io.sqlitek.findInternalNode
-import io.sqlitek.moveInto
-import io.sqlitek.serialize
 import java.nio.ByteBuffer
 
 /*
@@ -261,8 +253,8 @@ fun initializeInternalNode(node: ByteBuffer) {
 
 // -------------------------------- btree --------------------------------
 
-fun toStringBtree(pager: Pager, pageNum: Int, indentationLevel: Int): String {
-    val node = pager.getPage(pageNum)
+fun toStringBtree(table: Table, pageNum: Int, indentationLevel: Int): String {
+    val node = table.getPage(pageNum)
     val builder = StringBuilder()
     when (getNodeType(node)) {
         NodeType.INTERNAL -> {
@@ -272,13 +264,13 @@ fun toStringBtree(pager: Pager, pageNum: Int, indentationLevel: Int): String {
             for (i in 0..<numberOfKeys) {
                 builder.indent(indentationLevel + 1)
                 val childPtr = getInternalNodeChild(node, i)
-                toStringBtree(pager, childPtr, indentationLevel).also { builder.append(it) }
+                toStringBtree(table, childPtr, indentationLevel).also { builder.append(it) }
                 builder.indent(indentationLevel + 1)
                 val key = getInternalNodeKey(node, i)
                 builder.append("- key $$key\n")
             }
             val childPtr = getInternalNodeRightChild(node)
-            toStringBtree(pager, childPtr, indentationLevel).also { builder.append(it) }
+            toStringBtree(table, childPtr, indentationLevel).also { builder.append(it) }
         }
 
         NodeType.LEAF -> {
@@ -300,8 +292,8 @@ fun StringBuilder.indent(level: Int) {
 }
 
 
-fun printTree(pager: Pager, pageNum: Int, indentationLevel: Int) {
-    println(toStringBtree(pager, pageNum, indentationLevel))
+fun printTree(table: Table, pageNum: Int, indentationLevel: Int) {
+    println(toStringBtree(table, pageNum, indentationLevel))
 }
 
 
@@ -356,10 +348,9 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
      Update parent or create a new parent.
     */
     val table = cursor.table
-    val pager = table.pager
-    val oldNode = pager.getPage(cursor.pageNumber)
-    val newPageNum = pager.getUnsuedPageNum()
-    val newNode = pager.getPage(newPageNum)
+    val oldNode = table.getPage(cursor.pageNumber)
+    val newPageNum = table.getUnsuedPageNum()
+    val newNode = table.getPage(newPageNum)
     initializeLeafNode(newNode)
     val oldNext = getLeafNodeNextLeaf(oldNode)
     setLeafNodeNextLeaf(newNode, oldNext)
@@ -401,7 +392,7 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
     // Update cell counts in each node’s header:
     setLeafNodeNumCells(oldNode, LEAF_NODE_LEFT_SPLIT_COUNT)
     setLeafNodeNumCells(newNode, LEAF_NODE_RIGHT_SPLIT_COUNT)
-    pager.numberOfPages = maxOf(pager.numberOfPages, newPageNum + 1)
+    table.numberOfPages = maxOf(table.numberOfPages, newPageNum + 1)
     if (isRoot(oldNode)) {
         createNewRoot(table, newPageNum)
     } else {
@@ -442,8 +433,8 @@ private fun createNewRoot(table: Table, rightChildPageNum: Int) {
    */
     val root = table.getRootPage()
     //val rightChild = table.pager.getPage(rightChildPageNum)
-    val leftChildPageNum = table.pager.getUnsuedPageNum()
-    val leftChild = table.pager.getPage(leftChildPageNum)
+    val leftChildPageNum = table.getUnsuedPageNum()
+    val leftChild = table.getPage(leftChildPageNum)
     // The old root is copied to the left child so we can reuse the root page.
     root.copyInto(leftChild, length = PAGE_SIZE)
     setNodeRoot(leftChild, false)

@@ -33,14 +33,14 @@ fun execute(command: MetaCommand, table: Table) {
         MetaCommand.EXIT -> {
             // This is needed again here,
             // because `exitProcess` overrides the `finally` keyword.
-            closeDatabase(table)
+            table.close()
             exitProcess(0)
         }
 
         MetaCommand.CONSTANTS -> println(CONSTANTS)
         MetaCommand.BTREE -> {
             println("Tree:")
-            printTree(table.pager, 0, 0)
+            printTree(table, 0, 0)
         }
     }
 }
@@ -54,12 +54,6 @@ enum class PrepareStatementType(val value: String) {
     SELECT("select"),
     INSERT("insert")
 }
-
-data class Row(
-    val id: Int,
-    val username: String,
-    val email: String
-)
 
 sealed class PrepareStatementResult {
     class Success(val value: PrepareStatement) : PrepareStatementResult()
@@ -121,7 +115,7 @@ fun execute(statement: PrepareStatement, table: Table) {
 }
 
 fun executeInsert(row: Row, table: Table): ExecuteResult {
-    val node = table.pager.getPage(table.rootPageNumber)
+    val node = table.getPage(table.rootPageNumber)
     val numCells = getLeafNodeNumCells(node)
     val key = row.id
     val cursor = find(table, key)
@@ -137,13 +131,13 @@ fun executeInsert(row: Row, table: Table): ExecuteResult {
 fun executeSelect(table: Table): ExecuteResult {
     val cursor = tableStart(table)
     while (!cursor.endOfTable) {
-        val slot = table.getCursorValue(cursor)
+        val slot = cursor.get()
         slot.position(0)
         val raw = ByteArray(ROW_SIZE)
         slot.get(raw)
         val row = deserialize(raw)
         println(row)
-        table.cursorAdvance(cursor)
+        cursor.advance()
     }
     return Success
 }

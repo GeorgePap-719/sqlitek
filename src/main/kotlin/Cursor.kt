@@ -1,12 +1,6 @@
 package io.sqlitek
 
-import io.sqlitek.btree.NodeType
-import io.sqlitek.btree.getInternalNodeChild
-import io.sqlitek.btree.getInternalNodeKey
-import io.sqlitek.btree.getInternalNodeNumKeys
-import io.sqlitek.btree.getLeafNodeKey
-import io.sqlitek.btree.getLeafNodeNumCells
-import io.sqlitek.btree.getNodeType
+import io.sqlitek.btree.*
 import java.nio.ByteBuffer
 
 class Cursor(
@@ -17,6 +11,29 @@ class Cursor(
     var endOfTable: Boolean
 ) {
     val pager = table.pager
+
+    fun get(): ByteBuffer {
+        val pageNum = pageNumber
+        val page = pager.getPage(pageNum)
+        return getLeafNodeValue(page, cellNumber)
+    }
+
+    fun advance() {
+        val node = pager.getPage(pageNumber)
+        cellNumber += 1
+        val numCells = getLeafNodeNumCells(node)
+        /* Advance to next leaf node */
+        if (cellNumber >= numCells) {
+            val nextPageNumber = getLeafNodeNextLeaf(node)
+            if (nextPageNumber == 0) {
+                /* This was the rightmost leaf */
+                endOfTable = true
+            } else {
+                pageNumber = nextPageNumber
+                cellNumber = 0
+            }
+        }
+    }
 }
 
 fun tableStart(table: Table): Cursor {
@@ -33,8 +50,9 @@ fun tableStart(table: Table): Cursor {
  * If the key is not present, returns the position where it should be inserted.
  */
 fun find(table: Table, key: Int): Cursor {
+
     val rootPageNumber = table.rootPageNumber
-    val rootNode = table.pager.getPage(rootPageNumber)
+    val rootNode = table.getPage(rootPageNumber)
     if (getNodeType(rootNode) == NodeType.LEAF) {
         return findLeafNode(table, rootPageNumber, key)
     }
