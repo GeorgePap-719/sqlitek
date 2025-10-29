@@ -7,6 +7,7 @@ import io.sqlitek.btree.getInternalNodeNumKeys
 import io.sqlitek.btree.getLeafNodeKey
 import io.sqlitek.btree.getLeafNodeNumCells
 import io.sqlitek.btree.getNodeType
+import java.nio.ByteBuffer
 
 class Cursor(
     val table: Table,
@@ -44,8 +45,20 @@ fun find(table: Table, key: Int): Cursor {
 // Note that the key to the right of each child pointer is the maximum key contained by that child.
 fun findInternalNode(table: Table, pageNum: Int, key: Int): Cursor {
     val node = table.pager.getPage(pageNum)
+    val childIndex = findInternalNodeChildIndex(node, key)
+    val childNum = getInternalNodeChild(node, childIndex)
+    val child = table.pager.getPage(childNum)
+    return when (getNodeType(child)) {
+        NodeType.INTERNAL -> findInternalNode(table, childNum, key)
+        NodeType.LEAF -> findLeafNode(table, childNum, key)
+    }
+}
+
+/**
+ * Returns the index of the child which should contain the given key.
+ */
+fun findInternalNodeChildIndex(node: ByteBuffer, key: Int): Int {
     val numKeys = getInternalNodeNumKeys(node)
-    /* Binary search to find index of child to search */
     var min = 0
     var max = numKeys
     while (min != max) {
@@ -57,12 +70,7 @@ fun findInternalNode(table: Table, pageNum: Int, key: Int): Cursor {
             min = index + 1
         }
     }
-    val childNum = getInternalNodeChild(node, min)
-    val child = table.pager.getPage(childNum)
-    return when (getNodeType(child)) {
-        NodeType.INTERNAL -> findInternalNode(table, childNum, key)
-        NodeType.LEAF -> findLeafNode(table, childNum, key)
-    }
+    return min
 }
 
 // This will either return:

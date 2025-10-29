@@ -7,6 +7,7 @@ import io.sqlitek.Row
 import io.sqlitek.RowLayout.ROW_SIZE
 import io.sqlitek.Table
 import io.sqlitek.copyInto
+import io.sqlitek.findInternalNode
 import io.sqlitek.moveInto
 import io.sqlitek.serialize
 import java.nio.ByteBuffer
@@ -406,6 +407,20 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
     } else {
         error("Need to implement updating parent after split")
     }
+}
+
+fun getParentPage(node: ByteBuffer): Int {
+    return node.getInt(PARENT_POINTER_OFFSET)
+}
+
+fun updateInternalNodeKey(node: ByteBuffer, oldKey: Int, newKey: Int) {
+    val childIndex = getInternalNodeChild(node, oldKey)
+    setInternalNodeKey(node, childIndex, newKey)
+}
+
+// Adds a new child/key pair to parent that corresponds to child.
+fun internalNodeInsert(table: Table, parentPageNumber: Int, childPageNumber: Int) {
+    TODO()
 }
 
 private fun moveCell(src: ByteBuffer, srcOffset: Int, dest: ByteBuffer, destOffset: Int) {
