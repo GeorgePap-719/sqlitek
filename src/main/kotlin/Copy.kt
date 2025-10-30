@@ -9,7 +9,12 @@ fun ByteBuffer.copyInto(
     length: Int
 ) {
     val src = this
-    src.copyInto(src, destOffset, srcOffset, length)
+    src.copyInto(
+        dest = src,
+        destOffset = destOffset,
+        srcOffset = srcOffset,
+        length = length
+    )
 }
 
 /**

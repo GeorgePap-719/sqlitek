@@ -1,5 +1,6 @@
-package io.sqlitek
+package io.sqlitek.btree
 
+import io.sqlitek.RowLayout
 import java.io.Closeable
 import java.nio.ByteBuffer
 

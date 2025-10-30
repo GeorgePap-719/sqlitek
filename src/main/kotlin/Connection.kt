@@ -1,6 +1,8 @@
 package io.sqlitek
 
+import io.sqlitek.btree.Table
 import io.sqlitek.btree.initializeLeafNode
+import io.sqlitek.btree.openPager
 import io.sqlitek.btree.setNodeRoot
 
 // By opening a connection, we mean:

@@ -1,6 +1,5 @@
 package io.sqlitek.btree
 
-import io.sqlitek.Table
 import java.nio.ByteBuffer
 
 class Cursor(
@@ -49,7 +48,6 @@ fun tableStart(table: Table): Cursor {
  * If the key is not present, returns the position where it should be inserted.
  */
 fun find(table: Table, key: Int): Cursor {
-
     val rootPageNumber = table.rootPageNumber
     val rootNode = table.getPage(rootPageNumber)
     if (getNodeType(rootNode) == NodeType.LEAF) {

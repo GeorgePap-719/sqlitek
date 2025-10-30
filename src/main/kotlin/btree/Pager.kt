@@ -1,4 +1,4 @@
-package io.sqlitek
+package io.sqlitek.btree
 
 import java.io.Closeable
 import java.io.File

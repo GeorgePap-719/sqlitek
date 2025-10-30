@@ -1,6 +1,7 @@
 package io.sqlitek
 
 import io.sqlitek.ConnectionResult.*
+import io.sqlitek.btree.Table
 import kotlin.system.exitProcess
 
 // vim mydb.db
@@ -15,8 +16,7 @@ fun main(args: Array<String>) {
         while (true) {
             println("db > ")
             val input = readln()
-            val result = parseInput(input, it)
-            when (result) {
+            when (val result = parseInput(input, it)) {
                 InvalidMetaStatement -> println("Unrecognized meta-statement:$input")
                 is Failure -> println(result.message)
                 // Nothing, just continue.
@@ -28,15 +28,11 @@ fun main(args: Array<String>) {
 
 fun parseInput(input: String, table: Table): ConnectionResult {
     if (input.first() == '.') {
-        val command = parseMetaCommand(input)
-        if (command == null) {
-            return InvalidMetaStatement
-        }
+        val command = parseMetaCommand(input) ?: return InvalidMetaStatement
         execute(command, table)
         return Success
     }
-    val statementResult = parsePrepareStatement(input)
-    when (statementResult) {
+    when (val statementResult = parsePrepareStatement(input)) {
         is PrepareStatementResult.Failure -> return Failure(statementResult.message)
         is PrepareStatementResult.Success -> {
             execute(statementResult.value, table)
