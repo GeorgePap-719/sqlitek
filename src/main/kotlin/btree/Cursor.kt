@@ -38,9 +38,10 @@ fun tableStart(table: Table): Cursor {
     // Even if key 0 does not exist in the table,
     // this method will return the position of the lowest id (the start of the left-most leaf node).
     val cursor = find(table, 0)
-    val node = table.getPage(cursor.pageNumber)
+    val pageNumber = cursor.pageNumber
+    val node = table.getPage(pageNumber)
     val numCells = getLeafNodeNumCells(node)
-    return Cursor(table, 0, numCells, numCells == 0)
+    return Cursor(table, 0, pageNumber, numCells == 0)
 }
 
 /*
