@@ -286,24 +286,27 @@ fun initializeInternalNode(node: ByteBuffer) {
 
 // -------------------------------- btree --------------------------------
 
-fun toStringBtree(table: Table, pageNum: Int, indentationLevel: Int): String {
-    val node = table.getPage(pageNum)
+fun toStringBtree(table: Table, pageNumber: Int, indentationLevel: Int): String {
+    val node = table.getPage(pageNumber)
     val builder = StringBuilder()
     when (getNodeType(node)) {
         NodeType.INTERNAL -> {
             val numberOfKeys = getInternalNodeNumKeys(node)
             builder.indent(indentationLevel)
             builder.append("- internal (size $numberOfKeys)\n")
-            for (i in 0..<numberOfKeys) {
-                builder.indent(indentationLevel + 1)
-                val childPtr = getInternalNodeChild(node, i)
-                toStringBtree(table, childPtr, indentationLevel).also { builder.append(it) }
-                builder.indent(indentationLevel + 1)
-                val key = getInternalNodeKey(node, i)
-                builder.append("- key $key\n")
+            if (numberOfKeys > 0) {
+                for (i in 0..<numberOfKeys) {
+                    //builder.indent(indentationLevel + 1)
+                    val childPtr = getInternalNodeChild(node, i)
+                    toStringBtree(table, childPtr, indentationLevel + 1)
+                        .also { builder.append(it) }
+                    builder.indent(indentationLevel + 1)
+                    val key = getInternalNodeKey(node, i)
+                    builder.append("- key $key\n")
+                }
+                val childPtr = getInternalNodeRightChild(node)
+                toStringBtree(table, childPtr, indentationLevel + 1).also { builder.append(it) }
             }
-            val childPtr = getInternalNodeRightChild(node)
-            toStringBtree(table, childPtr, indentationLevel).also { builder.append(it) }
         }
 
         NodeType.LEAF -> {

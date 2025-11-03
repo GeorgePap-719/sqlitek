@@ -39,6 +39,18 @@ class MainTest {
     }
 
     @Test
+    fun testStr() {
+        val sb = StringBuilder()
+        sb.append("hello\n")
+        sb.append("    ")
+        sb.append("key")
+        repeat(0 + 1) {
+            println(sb.toString())
+        }
+    }
+
+
+    @Test
     fun allowMaxStrings() {
         val table = createConnection(dbFilename)
         val statement = insertStatement(
