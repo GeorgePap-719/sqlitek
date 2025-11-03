@@ -26,7 +26,7 @@ class MainTest {
     @Test
     fun largeInsertTest() {
         val table = createConnection(dbFilename)
-        val statements = createInsertStatements(14)
+        val statements = createInsertStatements(86)
         for (statement in statements) {
             val result = parseInput(statement, table)
             assert(result is ConnectionResult.Success)

@@ -4,7 +4,7 @@ import io.sqlitek.RowLayout
 import java.io.Closeable
 import java.nio.ByteBuffer
 
-const val TABLE_MAX_PAGES = 100
+const val TABLE_MAX_PAGES = 400
 
 const val ROWS_PER_PAGE = PAGE_SIZE / RowLayout.ROW_SIZE
 const val TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES
@@ -27,7 +27,7 @@ class Table(
 
     fun getRootPage(): ByteBuffer = pager.getPage(rootPageNumber)
     fun getPage(number: Int): ByteBuffer = pager.getPage(number)
-    fun getUnsuedPageNum(): Int = pager.getUnsuedPageNum()
+    fun getUnsuedPageNumber(): Int = pager.getUnsuedPageNum()
 
     // - flushes the page cache to disk
     // - closes the database file

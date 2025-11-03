@@ -181,7 +181,7 @@ const val INTERNAL_NODE_CHILD_SIZE = Int.SIZE_BYTES
 const val INTERNAL_NODE_CELL_SIZE = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE
 
 // Keep this small for testing.
-const val INTERNAL_NODE_MAX_CELLS = 3
+const val INTERNAL_NODE_MAX_KEYS = 3
 
 fun getInternalNodeNumKeys(node: ByteBuffer): Int {
     return node.getInt(INTERNAL_NODE_NUM_KEYS_OFFSET)
@@ -207,10 +207,21 @@ fun getInternalNodeChild(node: ByteBuffer, childNum: Int): Int {
     val numberOfKeys = getInternalNodeNumKeys(node)
     return when {
         childNum > numberOfKeys -> error("Tried to access childNum:$childNum > num_keys:$numberOfKeys")
-        childNum == numberOfKeys -> getInternalNodeRightChild(node)
+        childNum == numberOfKeys -> {
+            val rightChild = getInternalNodeRightChild(node)
+            if (rightChild == INVALID_PAGE_NUMBER) {
+                error("Tried to access right child of node:$node but was empty")
+            }
+            rightChild
+        }
+
         else -> {
             val offset = getInternalNodeCellOffset(childNum)
-            node.getInt(offset)
+            val child = node.getInt(offset)
+            if (child == INVALID_PAGE_NUMBER) {
+                error("Tried to access child of node:$node but was empty")
+            }
+            child
         }
     }
 }
@@ -250,10 +261,26 @@ fun getNodeMaxKey(node: ByteBuffer): Int {
     }
 }
 
+tailrec fun getNodeMaxKey(table: Table, node: ByteBuffer): Int {
+    if (getNodeType(node) == NodeType.LEAF) {
+        val cellsNumber = getLeafNodeNumCells(node)
+        return getLeafNodeKey(node, cellsNumber - 1)
+    }
+    val nodePtr = getInternalNodeRightChild(node)
+    val rightChild = table.getPage(nodePtr)
+    return getNodeMaxKey(table, rightChild)
+}
+
 fun initializeInternalNode(node: ByteBuffer) {
     setNodeType(node, NodeType.INTERNAL)
     setNodeRoot(node, false)
     setLeafNodeNumCells(node, 0)
+    /*
+      Necessary because the root page number is 0; by not initializing an internal
+      node's right child to an invalid page number when initializing the node, we may
+      end up with 0 as the node's right child, which makes the node a parent of the root
+    */
+    setInternalNodeRightChild(node, INVALID_PAGE_NUMBER)
 }
 
 
@@ -266,14 +293,14 @@ fun toStringBtree(table: Table, pageNum: Int, indentationLevel: Int): String {
         NodeType.INTERNAL -> {
             val numberOfKeys = getInternalNodeNumKeys(node)
             builder.indent(indentationLevel)
-            builder.append("- leaf(size $numberOfKeys)\n")
+            builder.append("- internal (size $numberOfKeys)\n")
             for (i in 0..<numberOfKeys) {
                 builder.indent(indentationLevel + 1)
                 val childPtr = getInternalNodeChild(node, i)
                 toStringBtree(table, childPtr, indentationLevel).also { builder.append(it) }
                 builder.indent(indentationLevel + 1)
                 val key = getInternalNodeKey(node, i)
-                builder.append("- key $$key\n")
+                builder.append("- key $key\n")
             }
             val childPtr = getInternalNodeRightChild(node)
             toStringBtree(table, childPtr, indentationLevel).also { builder.append(it) }
@@ -313,6 +340,57 @@ fun printTree(table: Table, pageNum: Int, indentationLevel: Int) {
 // and a pointer to its parent (to allow finding a node’s siblings).
 // I define constants for the size and offset of every header field:
 class Btree
+
+/**
+ * Let N be the root node. First allocate two nodes, say L and R. Move lower half of N into L and the upper half into R.
+ * Now N is empty. Add 〈L, K,R〉 in N, where K is the max key in L. Page N remains the root.
+ * Note that the depth of the tree has increased by one, but the new tree remains height balanced without violating any B+-tree property.
+ */
+private fun createNewRoot(table: Table, rightChildPageNum: Int) {
+    /*
+     Handle splitting the root.
+     Old root copied to new page, becomes left child.
+     Address of right child passed in.
+     Re-initialize root page to contain the new root node.
+     New root node points to two children.
+   */
+    val root = table.getRootPage()
+    val leftChildPageNumber = table.getUnsuedPageNumber()
+    val rightChild = table.getPage(rightChildPageNum)
+    val leftChild = table.getPage(leftChildPageNumber)
+    if (getNodeType(root) == NodeType.INTERNAL) {
+        initializeInternalNode(rightChild)
+        initializeInternalNode(leftChild)
+    }
+    // The old root is copied to the left child so we can reuse the root page.
+    root.copyInto(leftChild, length = PAGE_SIZE)
+    setNodeRoot(leftChild, false)
+    if (getNodeType(leftChild) == NodeType.INTERNAL) {
+        var child: ByteBuffer
+        val numKeys = getInternalNodeNumKeys(leftChild)
+        for (i in 0..<numKeys) {
+            val node = getInternalNodeChild(leftChild, i)
+            child = table.getPage(node)
+            setParentNode(child, leftChildPageNumber)
+        }
+        val node = getInternalNodeRightChild(leftChild)
+        child = table.getPage(node)
+        setParentNode(child, leftChildPageNumber)
+    }
+    // Finally, we initialize the root page as a new internal node with two children.
+    initializeInternalNode(root)
+    setNodeRoot(root, true)
+    setInternalNodeNumKeys(root, 1)
+    setInternalNodeChild(root, 0, leftChildPageNumber)
+    val leftChildMaxKey = getNodeMaxKey(table, leftChild)
+    setInternalNodeKey(root, 0, leftChildMaxKey)
+    setInternalNodeRightChild(root, rightChildPageNum)
+    val rootPageNumber = table.rootPageNumber
+    setParentNode(leftChild, rootPageNumber)
+    setParentNode(rightChild, rootPageNumber)
+}
+
+// -------------------------------- leaf node --------------------------------
 
 fun leafNodeInsert(cursor: Cursor, key: Int, value: Row) {
     val node = cursor.table.getPage(cursor.pageNumber)
@@ -355,7 +433,7 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
     val table = cursor.table
     val oldNode = table.getPage(cursor.pageNumber)
     val oldMax = getNodeMaxKey(oldNode)
-    val newPageNumber = table.getUnsuedPageNum()
+    val newPageNumber = table.getUnsuedPageNumber()
     val newNode = table.getPage(newPageNumber)
     initializeLeafNode(newNode)
     val oldParentPage = getParentNode(oldNode)
@@ -409,6 +487,8 @@ private fun leafNodeSplitAndInsert(cursor: Cursor, key: Int, value: Row) {
     }
 }
 
+// -------------------------------- internal node --------------------------------
+
 fun getParentNode(node: ByteBuffer): Int {
     return node.getInt(PARENT_POINTER_OFFSET)
 }
@@ -418,7 +498,7 @@ fun setParentNode(node: ByteBuffer, pageNumber: Int) {
 }
 
 fun updateInternalNodeKey(node: ByteBuffer, oldKey: Int, newKey: Int) {
-    val childIndex = getInternalNodeChild(node, oldKey)
+    val childIndex = findInternalNodeChildIndex(node, oldKey)
     setInternalNodeKey(node, childIndex, newKey)
 }
 
@@ -426,19 +506,31 @@ fun internalNodeInsert(table: Table, parentPageNumber: Int, childPageNumber: Int
     // Adds a new child/key pair to parent that corresponds to child.
     val parent = table.getPage(parentPageNumber)
     val child = table.getPage(childPageNumber)
-    val childMaxKey = getNodeMaxKey(child)
+    val childMaxKey = getNodeMaxKey(table, child)
     val index = findInternalNodeChildIndex(parent, childMaxKey)
     val parentNumKeys = getInternalNodeNumKeys(parent)
-    setInternalNodeNumKeys(parent, parentNumKeys + 1)
-    if (parentNumKeys >= INTERNAL_NODE_MAX_CELLS) {
-        error("Need to implement splitting internal node")
+    if (parentNumKeys >= INTERNAL_NODE_MAX_KEYS) {
+        internalNodeSplitAndInsert(table, parentPageNumber, childPageNumber)
+        return
     }
-    val rightChildPageNum = getInternalNodeRightChild(parent)
-    val rightChild = table.getPage(rightChildPageNum)
-    val rightChildMaxKey = getNodeMaxKey(rightChild)
+    val rightChildPageNumber = getInternalNodeRightChild(parent)
+    // An internal node with a right child of INVALID_PAGE_NUM is empty.
+    if (rightChildPageNumber == INVALID_PAGE_NUMBER) {
+        setInternalNodeRightChild(parent, childPageNumber)
+        return
+    }
+    val rightChild = table.getPage(rightChildPageNumber)
+    /*
+       If we are already at the max number of cells for a node, we cannot increment
+       before splitting. Incrementing without inserting a new key/child pair
+       and immediately calling internal_node_split_and_insert has the effect
+       of creating a new key at (max_cells + 1) with an uninitialized value
+     */
+    setInternalNodeNumKeys(parent, parentNumKeys + 1)
+    val rightChildMaxKey = getNodeMaxKey(table, rightChild)
     if (childMaxKey > rightChildMaxKey) {
         // Replace right child.
-        setInternalNodeChild(parent, parentNumKeys, rightChildPageNum)
+        setInternalNodeChild(parent, parentNumKeys, rightChildPageNumber)
         setInternalNodeKey(parent, parentNumKeys, rightChildMaxKey)
         setInternalNodeRightChild(parent, childPageNumber)
     } else {
@@ -453,40 +545,82 @@ fun internalNodeInsert(table: Table, parentPageNumber: Int, childPageNumber: Int
     }
 }
 
+//TODO: check correctness
+fun internalNodeSplitAndInsert(table: Table, parentPageNumber: Int, childPageNumber: Int) {
+    var oldPageNumber = parentPageNumber
+    var oldNode = table.getPage(parentPageNumber)
+    val oldMax = getNodeMaxKey(oldNode)
+    val child = table.getPage(childPageNumber)
+    val childMax = getNodeMaxKey(child)
+    val newPageNumber = table.getUnsuedPageNumber()
+    /*
+        Declaring a flag before updating pointers which
+        records whether this operation involves splitting the root -
+        if it does, we will insert our newly created node during
+        the step where the table's new root is created. If it does
+        not, we have to insert the newly created node into its parent
+        after the old node's keys have been transferred over. We are not
+        able to do this if the newly created node's parent is not a newly
+        initialized root node, because in that case its parent may have existing
+        keys aside from our old node which we are splitting. If that is true, we
+        need to find a place for our newly created node in its parent, and we
+        cannot insert it at the correct index if it does not yet have any keys.
+   */
+    val parent: ByteBuffer
+    var newNode: ByteBuffer? = null
+    val isRoot = isRoot(oldNode)
+    if (isRoot) {
+        createNewRoot(table, newPageNumber)
+        parent = table.getRootPage()
+        // If we are splitting the root, we need to update `oldNode` to point
+        // to the new root's left child, `newPageNumber` will already point to
+        // the new root's right child.
+        oldPageNumber = getInternalNodeChild(parent, 0)
+        oldNode = table.getPage(oldPageNumber)
+    } else {
+        val parentNode = getParentNode(oldNode)
+        parent = table.getPage(parentNode)
+        newNode = table.getPage(newPageNumber)
+        initializeInternalNode(newNode)
+    }
+    var oldNumberKeys = getInternalNodeNumKeys(oldNode)
+    var curPageNumber = getInternalNodeRightChild(oldNode)
+    var cur = table.getPage(curPageNumber)
+    // First put right child into new node and set right child of old node to invalid page number.
+    internalNodeInsert(table, newPageNumber, curPageNumber)
+    setParentNode(cur, newPageNumber)
+    setInternalNodeRightChild(oldNode, INVALID_PAGE_NUMBER)
+    // For each key until you get to the middle key, move the key and the child to the new node.
+    for (i in INTERNAL_NODE_MAX_KEYS - 1 downTo INTERNAL_NODE_MAX_KEYS + 1 / 2) {
+        curPageNumber = getInternalNodeChild(oldNode, i)
+        cur = table.getPage(curPageNumber)
+        internalNodeInsert(table, newPageNumber, curPageNumber)
+        setParentNode(cur, newPageNumber)
+        setInternalNodeNumKeys(oldNode, --oldNumberKeys)
+    }
+    // Set child before middle key, which is now the highest key, to be node's right child,
+    // and decrement number of keys.
+    val newValue = getInternalNodeChild(oldNode, oldNumberKeys - 1)
+    setInternalNodeRightChild(oldNode, newValue)
+    setInternalNodeNumKeys(oldNode, --oldNumberKeys)
+    // Determine which of the two nodes after the split
+    // should contain the child to be inserted and insert the child.
+    val maxAfterSplit = getNodeMaxKey(table, oldNode)
+    val destPageNumber = if (childMax < maxAfterSplit) oldPageNumber else newPageNumber
+    internalNodeInsert(table, destPageNumber, childPageNumber)
+    setParentNode(child, destPageNumber)
+    val curMax = getNodeMaxKey(table, oldNode)
+    updateInternalNodeKey(parent, oldMax, curMax)
+    if (!isRoot) {
+        val parent = getParentNode(oldNode)
+        internalNodeInsert(table, parent, newPageNumber)
+        setParentNode(newNode!!, getParentNode(oldNode))
+    }
+}
+
 private fun moveCell(src: ByteBuffer, srcOffset: Int, dest: ByteBuffer, destOffset: Int) {
     src.moveInto(dest, destOffset, srcOffset, LEAF_NODE_CELL_SIZE)
 }
 
-/**
- * Let N be the root node. First allocate two nodes, say L and R. Move lower half of N into L and the upper half into R.
- * Now N is empty. Add 〈L, K,R〉 in N, where K is the max key in L. Page N remains the root.
- * Note that the depth of the tree has increased by one, but the new tree remains height balanced without violating any B+-tree property.
- */
-private fun createNewRoot(table: Table, rightChildPageNum: Int) {
-    /*
-     Handle splitting the root.
-     Old root copied to new page, becomes left child.
-     Address of right child passed in.
-     Re-initialize root page to contain the new root node.
-     New root node points to two children.
-   */
-    val root = table.getRootPage()
-    val leftChildPageNum = table.getUnsuedPageNum()
-    val rightChild = table.getPage(rightChildPageNum)
-    val leftChild = table.getPage(leftChildPageNum)
-    // The old root is copied to the left child so we can reuse the root page.
-    root.copyInto(leftChild, length = PAGE_SIZE)
-    setNodeRoot(leftChild, false)
-    // Finally, we initialize the root page as a new internal node with two children.
-    initializeInternalNode(root)
-    setNodeRoot(root, true)
-    setInternalNodeNumKeys(root, 1)
-    setInternalNodeChild(root, 0, leftChildPageNum)
-    val leftChildMaxKey = getNodeMaxKey(leftChild)
-    setInternalNodeKey(root, 0, leftChildMaxKey)
-    setInternalNodeRightChild(root, rightChildPageNum)
-    val rootPageNumber = table.rootPageNumber
-    setParentNode(leftChild, rootPageNumber)
-    setParentNode(rightChild, rootPageNumber)
-}
-
+// Represents an empty node.
+const val INVALID_PAGE_NUMBER = Int.MAX_VALUE
